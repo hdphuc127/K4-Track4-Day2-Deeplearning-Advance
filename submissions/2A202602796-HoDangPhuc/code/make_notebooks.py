@@ -157,7 +157,7 @@ for k, (ax_, o) in T.items():
     try:
         E.run_resume(cfg(exp_id=k, backbone=BEST, seed=0, **o))
     except Exception as e:
-        print("FAILED", k, repr(e)); torch.cuda.empty_cache(); open(f"{OUT}/failed.txt", "a").write(f"{k}: {e!r}\n")
+        print("FAILED", k, repr(e)); torch.cuda.empty_cache(); open(f"{OUT}/failed.txt", "a").write(f"{k}: {e!r}\\n")
 # chạy lại T09 của pilot ResNet-50 (lỗi dtype ở phase A đã sửa)
 E.run_resume(cfg(exp_id="T09", backbone="resnet50", seed=0, loss="ce_weighted", class_weight_beta=0.0))
 Cdf = E.collect_runs(PATHS["out_dir"], "C")
