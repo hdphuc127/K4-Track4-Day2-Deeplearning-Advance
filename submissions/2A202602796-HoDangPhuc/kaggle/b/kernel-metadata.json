@@ -1,0 +1,19 @@
+{
+  "id": "ashuraotsuki/deepweeds-b",
+  "title": "deepweeds-b",
+  "code_file": "deepweeds-b.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "ashuraotsuki/deepweeds-fold0"
+  ],
+  "competition_sources": [],
+  "model_sources": [],
+  "kernel_sources": [
+    "ashuraotsuki/deepweeds-a"
+  ]
+}
