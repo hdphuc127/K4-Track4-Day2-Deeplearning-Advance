@@ -137,22 +137,49 @@ Tdf["delta_vs_T00"] = Tdf.val_macro_f1 - Tdf.loc[Tdf.exp_id == "T00", "val_macro
 Tdf["axis"] = Tdf.exp_id.map(lambda k: T[k][0]); Tdf.to_csv(f"{OUT}/training.csv", index=False)
 print(Tdf[["exp_id", "axis", "val_macro_f1", "val_top1", "delta_vs_T00", "train_s_per_epoch"]])''')
 
+STEP_C = ("code", '''BEST = "convnext_tiny"   # chọn sau Bước 1: macro-F1 val 0.971 so với ResNet-50 0.812 (xem báo cáo)
+T = {  # exp_id: (trục, override so với C00)
+ "C00": ("nền", {}),
+ "C01": ("A khởi tạo", dict(init="frozen")),
+ "C02": ("A khởi tạo", dict(init="scratch")),
+ "C03": ("B augmentation", dict(aug="color")),
+ "C04": ("B augmentation", dict(aug="trivial")),
+ "C05": ("B augmentation", dict(mix="cutmix")),
+ "C06": ("B augmentation", dict(mix="mixup")),
+ "C07": ("C loss", dict(loss="ls", label_smoothing=0.1)),
+ "C08": ("C loss", dict(loss="focal", focal_gamma=2.0)),
+ "C09": ("C loss", dict(loss="ce_weighted", class_weight_beta=0.0)),
+ "C10": ("D sampler", dict(sampler="balanced")),
+ "C11": ("F EMA", dict(ema_decay=0.995)),
+ "C12": ("E LR", dict(lr_backbone=2e-4, lr_head=2e-3)),
+}
+for k, (ax_, o) in T.items():
+    try:
+        E.run_resume(cfg(exp_id=k, backbone=BEST, seed=0, **o))
+    except Exception as e:
+        print("FAILED", k, repr(e)); torch.cuda.empty_cache(); open(f"{OUT}/failed.txt", "a").write(f"{k}: {e!r}\n")
+# chạy lại T09 của pilot ResNet-50 (lỗi dtype ở phase A đã sửa)
+E.run_resume(cfg(exp_id="T09", backbone="resnet50", seed=0, loss="ce_weighted", class_weight_beta=0.0))
+Cdf = E.collect_runs(PATHS["out_dir"], "C")
+Cdf["delta_vs_C00"] = Cdf.val_macro_f1 - Cdf.loc[Cdf.exp_id == "C00", "val_macro_f1"].iloc[0]
+Cdf["axis"] = Cdf.exp_id.map(lambda k: T[k][0]); Cdf.to_csv(f"{OUT}/training_c.csv", index=False)
+print(Cdf[["exp_id", "axis", "val_macro_f1", "val_top1", "delta_vs_C00", "train_s_per_epoch"]])''')
+
 CLEAN = ("code", '''# bỏ checkpoint để output nhẹ (giữ logits, history, predictions, curves)
 !find {OUT}/runs -name "best.pt" -delete
 !du -sh {OUT}; ls {OUT}''')
 
 COPY_A = ("code", '''import glob, shutil
-cand = [p for p in glob.glob("/kaggle/input/**/runs", recursive=True)]
-print("kết quả của A:", cand)
-assert cand, "không thấy output của notebook A trong /kaggle/input"
-src_out = os.path.dirname(cand[0])
-for sub in ("runs", "predictions", "curves", "eda"):
-    if os.path.isdir(f"{src_out}/{sub}"):
-        shutil.copytree(f"{src_out}/{sub}", f"{OUT}/{sub}", dirs_exist_ok=True)
-for f in ("backbones.csv", "training.csv"):
-    if os.path.exists(f"{src_out}/{f}"): shutil.copy(f"{src_out}/{f}", f"{OUT}/{f}")
-B = pd.read_csv(f"{OUT}/backbones.csv"); Tdf = pd.read_csv(f"{OUT}/training.csv")
-print(B.shape, Tdf.shape)''')
+cands = sorted(set(os.path.dirname(p) for p in glob.glob("/kaggle/input/**/runs", recursive=True)))
+print("output các phase trước:", cands)
+assert cands, "không thấy output phase A/C trong /kaggle/input"
+for src_out in cands:
+    for sub in ("runs", "predictions", "curves", "eda"):
+        if os.path.isdir(f"{src_out}/{sub}"):
+            shutil.copytree(f"{src_out}/{sub}", f"{OUT}/{sub}", dirs_exist_ok=True)
+    for f in ("backbones.csv", "training.csv", "training_c.csv", "failed.txt"):
+        if os.path.exists(f"{src_out}/{f}"): shutil.copy(f"{src_out}/{f}", f"{OUT}/{f}")
+B = pd.read_csv(f"{OUT}/backbones.csv"); print(B.shape)''')
 
 
 def smoke():
@@ -172,7 +199,12 @@ def phase_a():
                EDA, SANITY, STEP1, STEP2, CLEAN])
 
 
-def phase_b(best="resnet50", combo="dict(mix='cutmix', loss='ls', label_smoothing=0.1, ema_decay=0.995)",
+def phase_c():
+    return nb([("markdown", "# DeepWeeds — Phase C: ablation chính trên ConvNeXt-T (C00-C12) + T09 pilot"), SETUP, DATA, PATHS,
+               STEP_C, CLEAN])
+
+
+def phase_b(best="convnext_tiny", combo="dict(mix='cutmix', loss='ls', label_smoothing=0.1, ema_decay=0.995)",
             views="flip"):
     return nb([("markdown", "# DeepWeeds — Phase B: Bước 3-5 (suy luận, chung kết, xlsx)"), SETUP, DATA, PATHS, COPY_A,
                ("code", f'''import numpy as np, inference as I, benchmark as BM
@@ -182,10 +214,11 @@ BEST = "{best}"
 COMBO = {combo}
 FINAL_VIEWS = {{"id": I.view_identity, "flip": I.view_hflip}} if "{views}" == "flip" else {{"id": I.view_identity}}
 SPACE = "prob"
-E.run_resume(cfg(exp_id="T13", backbone=BEST, seed=0, **COMBO))
-Tdf = E.collect_runs(PATHS["out_dir"], "T")
-Tdf["delta_vs_T00"] = Tdf.val_macro_f1 - Tdf.loc[Tdf.exp_id == "T00", "val_macro_f1"].iloc[0]'''),
-               ("code", '''REF = cfg(exp_id="T13", backbone=BEST, seed=0, **COMBO)
+E.run_resume(cfg(exp_id="C13", backbone=BEST, seed=0, **COMBO))
+Pil = E.collect_runs(PATHS["out_dir"], "T")   # pilot ResNet-50 (T00-T12)
+Tdf = E.collect_runs(PATHS["out_dir"], "C")   # ablation chính ConvNeXt-T (C00-C13)
+Tdf["delta_vs_C00"] = Tdf.val_macro_f1 - Tdf.loc[Tdf.exp_id == "C00", "val_macro_f1"].iloc[0]'''),
+               ("code", '''REF = cfg(exp_id="C13", backbone=BEST, seed=0, **COMBO)
 dev = torch.device("cuda"); model = E.load_best(REF, dev)
 va_loader = E._loader(REF, va)
 V = {"I00 1-view": {"id": I.view_identity},
@@ -226,14 +259,14 @@ Lat = pd.DataFrame(lat); Lat.to_csv(f"{OUT}/latency.csv", index=False); print(La
 for seed in (0, 1, 2):
     c = cfg(exp_id="F01", backbone=BEST, seed=seed, **COMBO)
     E.run_resume(c); E.finalize(c, FINAL_VIEWS, SPACE)
-    E.run_resume(cfg(exp_id="T00", backbone=BEST, seed=seed, save_test_predictions=True))'''),
+    E.run_resume(cfg(exp_id="C00", backbone=BEST, seed=seed, save_test_predictions=True))'''),
                ("code", '''P = f"{OUT}/predictions"; EV = f"{CODE}/eval.py"; LB = LABELS_DIR
 !python {EV} score --pred "{P}/F01_seed*_test.csv" --test-csv {LB}/test_subset0.csv --labels {LB}/labels.csv --tag F01 --out {OUT}/eval_out
-!python {EV} score --pred "{P}/T00_seed*_test.csv" --test-csv {LB}/test_subset0.csv --labels {LB}/labels.csv --tag T00 --out {OUT}/eval_out
-!python {EV} grade --final "{P}/F01_seed*_test.csv" --baseline "{P}/T00_seed*_test.csv" --uncal "{P}/F01uncal_seed*_test.csv" --final-val "{P}/F01_seed*_val.csv" --test-csv {LB}/test_subset0.csv --labels {LB}/labels.csv --latency-p95-ms {float(0) or 0} --out {OUT}/eval_out | tee {OUT}/grade.txt'''),
+!python {EV} score --pred "{P}/C00_seed*_test.csv" --test-csv {LB}/test_subset0.csv --labels {LB}/labels.csv --tag C00 --out {OUT}/eval_out
+!python {EV} grade --final "{P}/F01_seed*_test.csv" --baseline "{P}/C00_seed*_test.csv" --uncal "{P}/F01uncal_seed*_test.csv" --final-val "{P}/F01_seed*_val.csv" --test-csv {LB}/test_subset0.csv --labels {LB}/labels.csv --latency-p95-ms {float(0) or 0} --out {OUT}/eval_out | tee {OUT}/grade.txt'''),
                ("code", '''Final = E.collect_runs(PATHS["out_dir"], "F01")
-Summ = pd.concat([B, Tdf]).sort_values("val_macro_f1", ascending=False).head(10)
-E.write_xlsx({"Backbones": B, "Training": Tdf, "Inference": Inf, "Final": Final, "Latency": Lat, "Summary": Summ},
+Summ = pd.concat([B, Tdf, Pil]).sort_values("val_macro_f1", ascending=False).head(10)
+E.write_xlsx({"Backbones": B, "Training": Tdf, "Training_pilot_resnet50": Pil, "Inference": Inf, "Final": Final, "Latency": Lat, "Summary": Summ},
              f"{OUT}/results.xlsx")
 !find {OUT}/runs -name "best.pt" -delete
 !du -sh {OUT}; ls {OUT}; ls {OUT}/eval_out''')])
@@ -258,6 +291,7 @@ if __name__ == "__main__":
     best, combo, views = (sys.argv[1:4] + [None] * 3)[:3] if len(sys.argv) > 3 else (None, None, None)
     write("smoke", "deepweeds-smoke", "deepweeds-smoke", smoke())
     write("a", "deepweeds-a", "deepweeds-a", phase_a())
+    write("c", "deepweeds-c", "deepweeds-c", phase_c())
     kw = {k: v for k, v in dict(best=best, combo=combo, views=views).items() if v}
-    write("b", "deepweeds-b", "deepweeds-b", phase_b(**kw), sources=[f"{USER}/deepweeds-a"])
+    write("b", "deepweeds-b", "deepweeds-b", phase_b(**kw), sources=[f"{USER}/deepweeds-a", f"{USER}/deepweeds-c"])
     print("ok", OUT)

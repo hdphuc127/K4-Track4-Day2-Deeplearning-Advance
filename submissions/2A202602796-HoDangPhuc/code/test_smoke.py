@@ -119,6 +119,12 @@ def test_experiments():
             D.check_split = orig
 
 
+def test_weighted_ce_half():
+    w = L.class_weights([9106] + [1000] * 8)
+    z = torch.randn(4, 9).half()
+    L.build_criterion("ce_weighted", weight=w)(z.float(), torch.tensor([0, 1, 2, 3]))  # không được lỗi dtype
+
+
 def test_overrides():
     assert Tr.parse_overrides(["seed=3", "ema_decay=none", "amp=false", "lr_head=1e-2"]) == \
         {"seed": 3, "ema_decay": None, "amp": False, "lr_head": 1e-2}

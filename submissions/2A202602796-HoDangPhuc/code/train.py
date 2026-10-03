@@ -129,6 +129,7 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler, scaler, cfg:
         optimizer.zero_grad(set_to_none=True)
         with torch.autocast(device.type, enabled=use_amp):
             out = model(x)
+        out = out.float()  # loss luôn tính FP32 (CE có trọng số lớp lỗi dtype với logits half)
         loss = L.mixed_loss(criterion, out, tgt) if cfg.mix else criterion(out, y)
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
