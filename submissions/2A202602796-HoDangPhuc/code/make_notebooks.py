@@ -204,21 +204,28 @@ def phase_c():
                STEP_C, CLEAN])
 
 
-def phase_b(best="convnext_tiny", combo="dict(mix='cutmix', loss='ls', label_smoothing=0.1, ema_decay=0.995)",
-            views="flip"):
+def phase_b(best="convnext_tiny"):
     return nb([("markdown", "# DeepWeeds — Phase B: Bước 3-5 (suy luận, chung kết, xlsx)"), SETUP, DATA, PATHS, COPY_A,
                ("code", f'''import numpy as np, inference as I, benchmark as BM
 from eval import compute_metrics
 tr, va, te = D.load_split(LABELS_DIR)
 BEST = "{best}"
-COMBO = {combo}
-FINAL_VIEWS = {{"id": I.view_identity, "flip": I.view_hflip}} if "{views}" == "flip" else {{"id": I.view_identity}}
-SPACE = "prob"
-E.run_resume(cfg(exp_id="C13", backbone=BEST, seed=0, **COMBO))
+# Tổ hợp ứng viên = các yếu tố có Δ val > 0 ở ablation C (TrivialAugment C04, CutMix C05, CE có trọng số C09); EMA (Δ≈0) bỏ.
+COMBO_CAND = dict(aug="trivial", mix="cutmix", loss="ce_weighted", class_weight_beta=0.0)
+E.run_resume(cfg(exp_id="C13", backbone=BEST, seed=0, **COMBO_CAND))
 Pil = E.collect_runs(PATHS["out_dir"], "T")   # pilot ResNet-50 (T00-T12)
 Tdf = E.collect_runs(PATHS["out_dir"], "C")   # ablation chính ConvNeXt-T (C00-C13)
+f = Tdf.set_index("exp_id").val_macro_f1
+USE_COMBO = bool(f["C13"] > f["C00"])         # quyết định CHỈ bằng val (seed 0)
+COMBO = COMBO_CAND if USE_COMBO else {{}}
+REF_ID = "C13" if USE_COMBO else "C14"        # C14 = công thức nền huấn luyện lại để có checkpoint
+if not USE_COMBO:
+    E.run_resume(cfg(exp_id="C14", backbone=BEST, seed=0))
+    Tdf = E.collect_runs(PATHS["out_dir"], "C")
+print("USE_COMBO", USE_COMBO, "| C00", f["C00"], "| C13", f["C13"])
+SPACE = "prob"
 Tdf["delta_vs_C00"] = Tdf.val_macro_f1 - Tdf.loc[Tdf.exp_id == "C00", "val_macro_f1"].iloc[0]'''),
-               ("code", '''REF = cfg(exp_id="C13", backbone=BEST, seed=0, **COMBO)
+               ("code", '''REF = cfg(exp_id=REF_ID, backbone=BEST, seed=0, **COMBO)
 dev = torch.device("cuda"); model = E.load_best(REF, dev)
 va_loader = E._loader(REF, va)
 V = {"I00 1-view": {"id": I.view_identity},
@@ -244,7 +251,11 @@ for nm, p in (("trước", I._softmax(z)), ("sau", I.apply_temperature(z, Tt))):
     m_ = compute_metrics(y, p.argmax(1), p)
     rows.append({"exp_id": "I07", "method": f"temperature {nm} (T={Tt:.3f})", "space": "prob", "K": 1,
                  "macro_f1_val": m_["macro_f1"], "top1_val": m_["top1"], "ece_val": m_["ece"]})
-Inf = pd.DataFrame(rows); Inf.to_csv(f"{OUT}/inference.csv", index=False); print(Inf)'''),
+Inf = pd.DataFrame(rows); Inf.to_csv(f"{OUT}/inference.csv", index=False); print(Inf)
+g = Inf.set_index(["exp_id", "space"]).macro_f1_val           # chọn view trên VAL
+FLIP_OK = bool(g[("I01", "prob")] > g[("I00", "prob")])
+FINAL_VIEWS = {"id": I.view_identity, "flip": I.view_hflip} if FLIP_OK else {"id": I.view_identity}
+print("FLIP_OK", FLIP_OK, list(FINAL_VIEWS))'''),
                ("code", '''# Độ trễ đúng cách: warmup 10, synchronize, 100 lần; batch 1 và 32; fp32/amp/fp16; gộp BN
 lat = []
 for b in (1, 32):
@@ -254,7 +265,9 @@ fused = I.fuse_conv_bn(model)
 for b in (1, 32):
     lat.append({**BM.latency_report(fused, b, 224, "fp32"), "fuse_bn": True})
 lat.append({**BM.tta_latency(model, 2, batch_size=1, img_size=224, dtype="fp32"), "gpu": torch.cuda.get_device_name()})
-Lat = pd.DataFrame(lat); Lat.to_csv(f"{OUT}/latency.csv", index=False); print(Lat)'''),
+Lat = pd.DataFrame(lat); Lat.to_csv(f"{OUT}/latency.csv", index=False); print(Lat)
+LAT95 = float(Lat[(Lat.batch == 1) & (Lat.dtype == "fp32") & (Lat.fuse_bn == False)].p95.iloc[0])   # p95 batch-1 fp32, ms
+print("LAT95", LAT95)'''),
                ("code", '''# Chung kết: huấn luyện KHÔNG ghi test; finalize() chạy test đúng một lần/seed; mốc T00 ghi test khi huấn luyện
 for seed in (0, 1, 2):
     c = cfg(exp_id="F01", backbone=BEST, seed=seed, **COMBO)
@@ -263,7 +276,7 @@ for seed in (0, 1, 2):
                ("code", '''P = f"{OUT}/predictions"; EV = f"{CODE}/eval.py"; LB = LABELS_DIR
 !python {EV} score --pred "{P}/F01_seed*_test.csv" --test-csv {LB}/test_subset0.csv --labels {LB}/labels.csv --tag F01 --out {OUT}/eval_out
 !python {EV} score --pred "{P}/C00_seed*_test.csv" --test-csv {LB}/test_subset0.csv --labels {LB}/labels.csv --tag C00 --out {OUT}/eval_out
-!python {EV} grade --final "{P}/F01_seed*_test.csv" --baseline "{P}/C00_seed*_test.csv" --uncal "{P}/F01uncal_seed*_test.csv" --final-val "{P}/F01_seed*_val.csv" --test-csv {LB}/test_subset0.csv --labels {LB}/labels.csv --latency-p95-ms {float(0) or 0} --out {OUT}/eval_out | tee {OUT}/grade.txt'''),
+!python {EV} grade --final "{P}/F01_seed*_test.csv" --baseline "{P}/C00_seed*_test.csv" --uncal "{P}/F01uncal_seed*_test.csv" --final-val "{P}/F01_seed*_val.csv" --test-csv {LB}/test_subset0.csv --labels {LB}/labels.csv --latency-p95-ms {LAT95} --out {OUT}/eval_out | tee {OUT}/grade.txt'''),
                ("code", '''Final = E.collect_runs(PATHS["out_dir"], "F01")
 Summ = pd.concat([B, Tdf, Pil]).sort_values("val_macro_f1", ascending=False).head(10)
 E.write_xlsx({"Backbones": B, "Training": Tdf, "Training_pilot_resnet50": Pil, "Inference": Inf, "Final": Final, "Latency": Lat, "Summary": Summ},
