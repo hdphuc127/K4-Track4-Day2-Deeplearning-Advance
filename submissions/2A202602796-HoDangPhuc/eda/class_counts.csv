@@ -1,0 +1,10 @@
+,train,val,test,total
+Chinee Apple,675,225,226,1126
+Lantana,637,213,213,1063
+Parkinsonia,618,206,207,1031
+Parthenium,613,204,205,1022
+Prickly Acacia,637,212,213,1062
+Rubber Vine,605,202,202,1009
+Siam Weed,644,215,215,1074
+Snake Weed,609,203,204,1016
+Negatives,5463,1821,1822,9106
