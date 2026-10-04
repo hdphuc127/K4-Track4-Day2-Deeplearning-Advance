@@ -72,7 +72,7 @@ def view_logits(model, loader, device, views: dict):
     return names, y, out
 
 
-def finalize(cfg: Tr.Config, views: dict | None = None, space: str = "prob") -> dict:
+def finalize(cfg: Tr.Config, views: dict | None = None, space: str = "prob", img_size: int | None = None) -> dict:
     """Chung kết cho MỘT seed. Chọn views/space bằng VAL trước khi gọi. T khớp trên VAL.
     Ghi <exp_id>_seed<k>_val.csv, _test.csv (đã hiệu chuẩn) và <exp_id>uncal_seed<k>_test.csv.
     Test được forward đúng MỘT lần ở đây (huấn luyện phải để save_test_predictions=False)."""
@@ -80,8 +80,8 @@ def finalize(cfg: Tr.Config, views: dict | None = None, space: str = "prob") -> 
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_best(cfg, dev)
     _, va, te = D.load_split(cfg.labels_dir, cfg.fold)
-    nv, yv, lv = view_logits(model, _loader(cfg, va), dev, views)
-    nt, yt, lt = view_logits(model, _loader(cfg, te), dev, views)
+    nv, yv, lv = view_logits(model, _loader(cfg, va, img_size), dev, views)
+    nt, yt, lt = view_logits(model, _loader(cfg, te, img_size), dev, views)
     pv_logits = np.log(np.clip(I.aggregate_views(list(lv.values()), space), 1e-12, None))  # logit giả để khớp T
     T = I.fit_temperature(pv_logits, yv)
     pv = I.apply_temperature(pv_logits, T)

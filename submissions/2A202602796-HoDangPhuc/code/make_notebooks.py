@@ -252,9 +252,12 @@ for nm, p in (("trước", I._softmax(z)), ("sau", I.apply_temperature(z, Tt))):
     rows.append({"exp_id": "I07", "method": f"temperature {nm} (T={Tt:.3f})", "space": "prob", "K": 1,
                  "macro_f1_val": m_["macro_f1"], "top1_val": m_["top1"], "ece_val": m_["ece"]})
 Inf = pd.DataFrame(rows); Inf.to_csv(f"{OUT}/inference.csv", index=False); print(Inf)
-g = Inf.set_index(["exp_id", "space"]).macro_f1_val           # chọn view trên VAL
-FLIP_OK = bool(g[("I01", "prob")] > g[("I00", "prob")])
+def _f(i, sp="prob"): return float(Inf[(Inf.exp_id == i) & (Inf.space == sp)].macro_f1_val.iloc[0])
+FLIP_OK = _f("I01") > _f("I00")                               # chọn trên VAL
 FINAL_VIEWS = {"id": I.view_identity, "flip": I.view_hflip} if FLIP_OK else {"id": I.view_identity}
+r4 = Inf[Inf.exp_id == "I04"].assign(res=lambda d: d.method.str.replace("res", "").astype(int))
+RES = int(r4[r4.macro_f1_val >= r4.macro_f1_val.max() - 0.001].res.min())   # độ phân giải nhỏ nhất trong 0.001 của tốt nhất (VAL)
+print("RES", RES)
 print("FLIP_OK", FLIP_OK, list(FINAL_VIEWS))'''),
                ("code", '''# Độ trễ đúng cách: warmup 10, synchronize, 100 lần; batch 1 và 32; fp32/amp/fp16; gộp BN
 lat = []
@@ -266,17 +269,17 @@ for b in (1, 32):
     lat.append({**BM.latency_report(fused, b, 224, "fp32"), "fuse_bn": True})
 lat.append({**BM.tta_latency(model, 2, batch_size=1, img_size=224, dtype="fp32"), "gpu": torch.cuda.get_device_name()})
 Lat = pd.DataFrame(lat); Lat.to_csv(f"{OUT}/latency.csv", index=False); print(Lat)
-LAT95 = float(Lat[(Lat.batch == 1) & (Lat.dtype == "fp32") & (Lat.fuse_bn == False)].p95.iloc[0])   # p95 batch-1 fp32, ms
+LAT95 = float(Lat[(Lat.batch == 1) & (Lat["dtype"] == "fp32") & (Lat.fuse_bn == False)].p95.iloc[0])   # p95 batch-1 fp32, ms
 print("LAT95", LAT95)'''),
                ("code", '''# Chung kết: huấn luyện KHÔNG ghi test; finalize() chạy test đúng một lần/seed; mốc T00 ghi test khi huấn luyện
 for seed in (0, 1, 2):
     c = cfg(exp_id="F01", backbone=BEST, seed=seed, **COMBO)
-    E.run_resume(c); E.finalize(c, FINAL_VIEWS, SPACE)
+    E.run_resume(c); E.finalize(c, FINAL_VIEWS, SPACE, RES)
     E.run_resume(cfg(exp_id="C00", backbone=BEST, seed=seed, save_test_predictions=True))'''),
                ("code", '''P = f"{OUT}/predictions"; EV = f"{CODE}/eval.py"; LB = LABELS_DIR
 !python {EV} score --pred "{P}/F01_seed*_test.csv" --test-csv {LB}/test_subset0.csv --labels {LB}/labels.csv --tag F01 --out {OUT}/eval_out
 !python {EV} score --pred "{P}/C00_seed*_test.csv" --test-csv {LB}/test_subset0.csv --labels {LB}/labels.csv --tag C00 --out {OUT}/eval_out
-!python {EV} grade --final "{P}/F01_seed*_test.csv" --baseline "{P}/C00_seed*_test.csv" --uncal "{P}/F01uncal_seed*_test.csv" --final-val "{P}/F01_seed*_val.csv" --test-csv {LB}/test_subset0.csv --labels {LB}/labels.csv --latency-p95-ms {LAT95} --out {OUT}/eval_out | tee {OUT}/grade.txt'''),
+!python {EV} grade --final "{P}/F01_seed*_test.csv" --baseline "{P}/C00_seed*_test.csv" --uncal "{P}/F01uncal_seed*_test.csv" --final-val "{P}/F01_seed*_val.csv" --test-csv {LB}/test_subset0.csv --val-csv {LB}/val_subset0.csv --labels {LB}/labels.csv --latency-p95-ms {LAT95} --out {OUT}/eval_out | tee {OUT}/grade.txt'''),
                ("code", '''Final = E.collect_runs(PATHS["out_dir"], "F01")
 Summ = pd.concat([B, Tdf, Pil]).sort_values("val_macro_f1", ascending=False).head(10)
 E.write_xlsx({"Backbones": B, "Training": Tdf, "Training_pilot_resnet50": Pil, "Inference": Inf, "Final": Final, "Latency": Lat, "Summary": Summ},
