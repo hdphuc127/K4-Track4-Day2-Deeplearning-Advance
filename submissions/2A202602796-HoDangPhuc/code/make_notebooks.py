@@ -288,6 +288,35 @@ E.write_xlsx({"Backbones": B, "Training": Tdf, "Training_pilot_resnet50": Pil, "
 !du -sh {OUT}; ls {OUT}; ls {OUT}/eval_out''')])
 
 
+def phase_lat():
+    return nb([("markdown", "# DeepWeeds — Độ trễ bổ sung: 7 backbone (batch 1) và các phương pháp suy luận, T4"), SETUP,
+               ("code", '''import benchmark as BM, model as M, pandas as pd
+OUT = f"{ROOT}/out"; os.makedirs(OUT, exist_ok=True)
+rows = []
+for name in ["resnet50", "resnext50", "convnext_tiny", "deit_small", "swin_tiny", "efficientnet_b0", "mobilenetv3"]:
+    m = M.build_model(name, pretrained=False)   # độ trễ không phụ thuộc giá trị trọng số
+    for dt in ["fp32", "fp16"]:
+        r = BM.latency_report(m, 1, 224, dt)
+        rows.append({"nhóm": "backbone", "config": name, **r}); print(name, dt, round(r["p50"], 2), round(r["p95"], 2))
+pd.DataFrame(rows).to_csv(f"{OUT}/latency_backbones.csv", index=False)'''),
+               ("code", '''m = M.build_model("convnext_tiny", pretrained=False)
+rows = []
+def add(cfgname, k, size, bs=1):
+    r = BM.latency_report(m, bs * k, size, "fp32")      # K view = batch K (cách triển khai thực tế)
+    rows.append({"nhóm": "inference", "config": cfgname, "K": k, "img_size": size, **r}); print(cfgname, round(r["p50"], 2), round(r["p95"], 2))
+add("I00 1-view 224", 1, 224)
+add("I01 flip (K=2) 224", 2, 224)
+add("I02b 5crop+flip 192 (K=10)", 10, 192)
+add("I04 res256", 1, 256)
+add("I04 res288 (F01)", 1, 288)
+add("I04 res320", 1, 320)
+for sz in (224, 288):
+    for dt in ("fp16",):
+        r = BM.latency_report(m, 1, sz, dt); rows.append({"nhóm": "inference", "config": f"1-view {sz} {dt}", "K": 1, "img_size": sz, **r})
+pd.DataFrame(rows).to_csv(f"{OUT}/latency_inference.csv", index=False)'''),
+               ("code", "!ls /kaggle/working/out")])
+
+
 def meta(slug, title, notebook, gpu=True, sources=()):
     return {"id": f"{USER}/{slug}", "title": title, "code_file": notebook, "language": "python",
             "kernel_type": "notebook", "is_private": True, "enable_gpu": gpu, "enable_tpu": False,
@@ -310,4 +339,5 @@ if __name__ == "__main__":
     write("c", "deepweeds-c", "deepweeds-c", phase_c())
     kw = {k: v for k, v in dict(best=best, combo=combo, views=views).items() if v}
     write("b", "deepweeds-b", "deepweeds-b", phase_b(**kw), sources=[f"{USER}/deepweeds-a", f"{USER}/deepweeds-c"])
+    write("lat", "deepweeds-lat", "deepweeds-lat", phase_lat())
     print("ok", OUT)
