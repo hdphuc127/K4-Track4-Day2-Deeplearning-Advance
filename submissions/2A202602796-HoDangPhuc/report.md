@@ -14,7 +14,7 @@ Mọi số val trong báo cáo đến từ log chạy thật (`results.xlsx`, `l
 | **F01 (tốt nhất)** | **0,9812 ± 0,0005** | **0,9774 ± 0,0006** | 0,0041 ± 0,0013 | 0,9617 ± 0,0068 | 0,9706 ± 0,0049 |
 | Mốc C00 (nền + 1 view) | 0,9760 ± 0,0017 | 0,9692 ± 0,0024 | 0,0136 ± 0,0012 | 0,9469 ± 0,0234 | 0,9526 ± 0,0142 |
 
-  Cải thiện macro-F1 so với mốc: **Δ = +0,0082**, lớn hơn std lớn nhất của hai nhóm (0,0024) nên vượt nhiễu. Độ trễ p95 batch 1 = 6,0 ms (T4, FP32, 224).
+  Cải thiện macro-F1 so với mốc: **Δ = +0,0082**, lớn hơn std lớn nhất của hai nhóm (0,0024) nên vượt nhiễu. Độ trễ batch 1 của cấu hình chung kết (288, FP32, T4): p50 6,9 ms, p95 9,4 ms (mốc 224: p50 5,4 ms).
 - **Kết luận chính:** (i) **backbone và khởi tạo** quyết định kết quả (ConvNeXt-T 0,971 so với ResNet-50 0,812 macro-F1 val; học từ đầu giảm 0,67); (ii) các yếu tố công thức (augmentation, loss, sampler, EMA) chỉ thay đổi ≤ 0,005 ở 1 seed, ở mức nhiễu; (iii) suy luận: tăng độ phân giải test lên 288 cho ≈ +0,005, lật và multi-crop không giúp, temperature scaling giảm ECE test từ 0,0345 xuống 0,0041.
 
 ## 2. Dữ liệu và thiết lập
@@ -45,21 +45,23 @@ Số đếm lệch ±1 ở hai lớp so với bài báo (Chinee Apple 1.126 so v
 
 ## 3. So sánh backbone (val, seed 0, công thức nền)
 
-| exp_id | Backbone | Tag trọng số | Params (M) | GMAC | macro-F1 | top-1 | s/epoch |
-|---|---|---|---|---|---|---|---|
-| B01 | ResNet-50 | a1_in1k | 23,5 | 4,09 | 0,8125 | 0,8626 | 44,8 |
-| B02 | ResNeXt-50 32x4d | a1h_in1k | 23,0 | 4,23 | 0,7853 | 0,8218 | 60,2 |
-| **B03** | **ConvNeXt-T** | in12k_ft_in1k | 27,8 | 4,45 | **0,9710** | **0,9777** | 52,2 |
-| B04 | DeiT-S | fb_in1k | 21,7 | 4,60 | 0,9576 | 0,9700 | 35,1 |
-| B05 | Swin-T | ms_in1k | 27,5 | 4,49 | 0,9534 | 0,9640 | 66,9 |
-| B06 | EfficientNet-B0 | ra_in1k | 4,0 | 0,38 | 0,8164 | 0,8638 | 29,1 |
-| B07 | MobileNetV3-L | ra_in1k | 4,2 | 0,22 | 0,7250 | 0,7989 | 18,9 |
+| exp_id | Backbone | Tag trọng số | Params (M) | GMAC | macro-F1 | top-1 | s/epoch | p50 b1 (ms) | p95 b1 (ms) |
+|---|---|---|---|---|---|---|---|---|---|
+| B01 | ResNet-50 | a1_in1k | 23,5 | 4,09 | 0,8125 | 0,8626 | 44,8 | 5,67 | 8,40 |
+| B02 | ResNeXt-50 32x4d | a1h_in1k | 23,0 | 4,23 | 0,7853 | 0,8218 | 60,2 | 7,70 | 8,39 |
+| **B03** | **ConvNeXt-T** | in12k_ft_in1k | 27,8 | 4,45 | **0,9710** | **0,9777** | 52,2 | 5,35 | 9,35 |
+| B04 | DeiT-S | fb_in1k | 21,7 | 4,60 | 0,9576 | 0,9700 | 35,1 | 4,58 | 4,91 |
+| B05 | Swin-T | ms_in1k | 27,5 | 4,49 | 0,9534 | 0,9640 | 66,9 | 9,46 | 12,77 |
+| B06 | EfficientNet-B0 | ra_in1k | 4,0 | 0,38 | 0,8164 | 0,8638 | 29,1 | 7,79 | 8,41 |
+| B07 | MobileNetV3-L | ra_in1k | 4,2 | 0,22 | 0,7250 | 0,7989 | 18,9 | 5,99 | 6,57 |
 
-(s/epoch = thời gian train mỗi epoch trên T4. Độ trễ suy luận sơ bộ của từng backbone **chưa đo**; chỉ ConvNeXt-T được đo ở mục 5. Xem Hạn chế.)
+(s/epoch = thời gian train mỗi epoch trên T4. Độ trễ suy luận: batch 1, FP32, 224, T4, warmup 10 + 100 lần đo, đồng bộ CUDA, không gồm tiền xử lý, trọng số khởi tạo ngẫu nhiên vì độ trễ không phụ thuộc giá trị trọng số; `logs/latency_backbones.csv`, sheet `Backbones`. p95 ở batch 1 dao động giữa các lần chạy vài ms do chi phí khởi chạy kernel phía CPU: cùng ConvNeXt-T 224 cho p95 6,0 ms ở lần đo trước và 9,4 ms ở lần này, nên so sánh bằng p50. Độ trễ gần như không tương quan với GMAC ở batch 1: DeiT-S nhanh nhất, Swin-T chậm nhất, MobileNetV3 (0,2 GMAC) không nhanh hơn ConvNeXt-T (4,5 GMAC), vì ở batch 1 chi phí do số lớp/kernel chứ không do FLOPs. Biểu đồ đánh đổi: `figures/tradeoff_acc_latency.png`.)
+
+![đánh đổi độ chính xác - độ trễ](figures/tradeoff_acc_latency.png)
 
 **Nhận xét.** Chênh lệch giữa họ LayerNorm (ConvNeXt, DeiT, Swin ≥ 0,95) và họ BatchNorm (≤ 0,82) rất lớn, vượt xa nhiễu. Đường cong B01/B07 (`curves/`) cho thấy các mạng BatchNorm chưa hội tụ trong 12 epoch: train loss ResNet-50 còn 0,38 và val loss giảm đều, không quá khớp. Vì vậy đây là hiệu ứng của "công thức nền cố định" hơn là kết luận về kiến trúc: các trọng số `a1_in1k`/`a1h_in1k` được tạo bằng công thức khác (BCE, LAMB, LR lớn) và có thể cần LR lớn hơn. Công thức không được dò riêng cho từng backbone. ConvNeXt-T còn được tiền huấn luyện thêm trên ImageNet-12k, một lợi thế khi so với ResNet-50. Thứ hạng ở đây không trùng thứ hạng ImageNet của slide (ResNet-50 và ConvNeXt-T cách nhau nhiều hơn, EfficientNet-B0 ngang ResNet-50). FLOPs không dự đoán thời gian train: DeiT-S (4,6 GMAC) nhanh hơn ResNet-50 (4,1 GMAC), Swin-T (4,5 GMAC) chậm nhất.
 
-**Chọn backbone:** ConvNeXt-T, vì macro-F1 val cao nhất với khoảng cách vượt nhiễu và độ trễ rất thấp (mục 5). DeiT-S là lựa chọn nếu cần huấn luyện nhanh hơn (35 so với 52 giây/epoch) với macro-F1 thấp hơn 0,013.
+**Chọn backbone:** ConvNeXt-T, vì macro-F1 val cao nhất với khoảng cách vượt nhiễu và độ trễ batch 1 thấp (p50 5,35 ms, chỉ DeiT-S 4,58 ms nhanh hơn). ConvNeXt-T nằm trên biên Pareto độ chính xác - độ trễ của biểu đồ trên: không backbone nào vừa chính xác hơn vừa nhanh hơn. DeiT-S là lựa chọn nếu cần huấn luyện nhanh hơn (35 so với 52 giây/epoch) với macro-F1 thấp hơn 0,013.
 
 **Thứ tự làm việc (nêu rõ).** Phase A ban đầu chạy ablation T00–T12 trên **ResNet-50**, backbone tôi đã chốt *trước khi* có số B (để chạy tự động). Sau khi thấy B03 vượt xa, tôi chạy lại ablation trên ConvNeXt-T (C-series, cùng thiết kế). T-series được giữ làm **pilot** (sheet `Training_pilot_resnet50`). Lần đầu T09 lỗi dtype (logits Half, trọng số lớp Float); đã sửa ở `train.py` và chạy lại.
 
@@ -143,8 +145,21 @@ Mô hình C13, đánh giá trên **val** (seed 0), `inference.csv`:
 - Ở batch 1, **AMP chậm hơn FP32** (7,8 so với 5,7 ms) vì chi phí chuyển kiểu; FP16 thuần ngang FP32. Ở batch 32, AMP/FP16 nhanh hơn FP32 gấp 2,7–3,4 lần. Đúng với cảnh báo "đo trên máy của bạn" của slide.
 - TTA lật K=2 tốn 1,7× (9,8 so với 5,8 ms), ít hơn 2× nhờ gộp batch, nhưng không mang lại độ chính xác.
 - **Gộp BN** không áp dụng cho ConvNeXt (dùng LayerNorm): bản gộp trả về nguyên mô hình, độ trễ không đổi.
-- **Cấu hình chung kết chạy ở 288 chưa được đo độ trễ riêng.** FLOPs ×1,65 ước tính ≈ 10 ms p95 ở batch 1, vẫn dưới ngân sách 100 ms rất xa, nhưng đây là ước tính, không phải số đo. Số p95 = 6,0 ms đưa vào `eval.py grade` (I5) là của cấu hình 224.
-- **Khuyến nghị:** *ngoại tuyến* dùng cấu hình chung kết (độ phân giải 288 + temperature scaling); *thời gian thực* dùng 1 view ở 224, FP32 hoặc FP16, p95 ≈ 6 ms, macro-F1 val ≈ 0,972; không dùng TTA và AMP ở batch 1.
+- **Độ trễ và chi phí của từng phương pháp suy luận** (lần đo bổ sung, T4, FP32, batch 1 ảnh gốc, K view gộp thành batch K; `logs/latency_inference.csv`, sheet `Inference`):
+
+| Phương pháp | macro-F1 val | p50 (ms) | p95 (ms) | p99 (ms) | chi phí so với I00 |
+|---|---|---|---|---|---|
+| I00 1 view 224 | 0,9721 | 5,43 | 9,36 | 9,39 | 1,00× |
+| I01 lật K=2 | 0,9717 | 8,38 | 11,38 | 11,40 | 1,54× |
+| I02b 5 crop + lật 192 (K=10) | 0,9703 | 27,65 | 28,33 | 28,38 | 5,09× |
+| I04 res256 | 0,9756 | 5,73 | 10,40 | 10,43 | 1,05× |
+| **I04 res288 (cấu hình F01)** | 0,9776 | 6,91 | 9,37 | 9,40 | 1,27× |
+| I04 res320 | 0,9777 | 8,59 | 14,90 | 14,93 | 1,58× |
+| temperature scaling | – | + không đáng kể | | | ≈ 1,00× |
+
+  I02 (5 crop, K=5) chưa đo độ trễ vì F1 không hơn I00. Nhận xét: độ phân giải 288 cho +0,0055 macro-F1 chỉ với 1,27× chi phí (p50 +1,5 ms), còn TTA lật tốn 1,54× và 5 crop + lật tốn 5,1× mà không tăng F1; ở biểu đồ đánh đổi (`figures/tradeoff_acc_latency.png`, ô phải) ngoài I00 (nhanh nhất) chỉ các điểm res256/288/320 nằm trên biên Pareto; lật và multi-crop bị chi phối. FP16 thuần ở batch 1: 224 → 5,42 ms, 288 → 5,59 ms (p50), tức ở batch 1 GPU chưa bão hòa nên tăng độ phân giải gần như miễn phí.
+- **Số đưa vào `eval.py grade` (I5)** là p95 của chính cấu hình chung kết (288, FP32, batch 1) = 9,4 ms, dưới ngân sách 100 ms; điểm I5 vẫn 2/2.
+- **Khuyến nghị:** *ngoại tuyến* dùng cấu hình chung kết (độ phân giải 288 + temperature scaling); *thời gian thực* dùng 1 view; nếu cần ngắn nhất thì 224 (p50 5,4 ms, macro-F1 val 0,972), còn 288 chỉ chậm hơn 1,5 ms (p50 6,9 ms, 0,978) nên cũng dùng được; không dùng TTA và AMP ở batch 1.
 
 ## 6. Cấu hình tốt nhất và kết quả chung kết
 
@@ -186,7 +201,7 @@ Ma trận nhầm lẫn tổng 3 seed (chia 3 để ra trung bình mỗi seed):
 - **So sánh backbone dùng một công thức nền duy nhất** (LR 1e-4/1e-3, 12 epoch): bất lợi cho các mạng BatchNorm với trọng số huấn luyện bằng công thức khác; xếp hạng có thể đổi nếu dò LR riêng. ConvNeXt-T có lợi thế tiền huấn luyện ImageNet-12k.
 - **Thứ tự chọn backbone cho ablation:** pilot ResNet-50 chọn trước khi có số B; ablation chính chạy trên ConvNeXt-T sau khi thấy B (chỉ dùng val).
 - **Δ chung kết so với mốc gộp ba thay đổi** (công thức, độ phân giải, hiệu chuẩn) nên không quy riêng cho yếu tố nào.
-- **Chưa đo:** độ trễ sơ bộ của 6 backbone còn lại (GUIDE 2.2) và độ trễ ở độ phân giải 288; không ensemble, soup, ONNX, hay các điểm thưởng.
+- **Độ trễ:** p95 batch 1 dao động vài ms giữa các lần chạy (CPU launch jitter của máy chia sẻ trên Kaggle), nên báo cáo p50 là chính; độ trễ I02 (5 crop, K=5) chưa đo; độ trễ đo bằng trọng số ngẫu nhiên, không kèm tiền xử lý/đọc ảnh. Không ensemble, soup, ONNX, hay các điểm thưởng.
 - **Ngân sách:** 12 epoch (bài báo ~100 epoch, augmentation mạnh hơn), batch 64, 1 GPU T4. Tổng ≈ 8 giờ GPU trên Kaggle (A ≈ 3,2 giờ, C ≈ 3 giờ, B ≈ 2 giờ). Lần chạy B đầu lỗi ở đoạn chọn view (lỗi pandas, đã sửa) và được chạy lại; lần đó chưa chạm test.
 - Tái lập chỉ gần đúng (cuDNN không hoàn toàn deterministic).
 - Các số của bài báo (95,7%, 95,1%, 88,5%, 88,8%) là **trích dẫn**, không phải kết quả của tôi.

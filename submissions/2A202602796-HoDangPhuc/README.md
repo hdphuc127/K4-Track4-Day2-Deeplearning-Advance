@@ -6,8 +6,8 @@
 | Mục | File |
 |---|---|
 | Báo cáo | [report.md](report.md) |
-| Bảng so sánh | [results.xlsx](results.xlsx) (Backbones, Training, Training_pilot_resnet50, Inference, Final, PerClass, Latency, Summary) |
-| Biểu đồ training | [curves/](curves) (mỗi exp_id một ảnh), [eda/](eda), [figures/](figures) (ma trận nhầm lẫn, ảnh sai) |
+| Bảng so sánh | [results.xlsx](results.xlsx) (Backbones có độ trễ b1, Training, Training_pilot_resnet50, Inference, Final, PerClass, Latency, Summary, Latency_extra, Final_vs_baseline) |
+| Biểu đồ training | [curves/](curves) (mỗi exp_id một ảnh), [eda/](eda), [figures/](figures) (ma trận nhầm lẫn, ảnh sai, `tradeoff_acc_latency.png`) |
 | Dự đoán | [predictions/](predictions) (F01, F01uncal, C00: test và val, seed 0–2) |
 | Số tính từ `eval.py` | [eval_out/](eval_out), [logs/grade.txt](logs/grade.txt) |
 | Log từng lần chạy | [logs/runs/](logs/runs) (config.json, summary.json, history.csv) |
@@ -20,9 +20,10 @@ Tính lại chỉ số: `python code/eval.py score --pred "predictions/F01_seed*
 |---|---|---|
 | A | EDA, kiểm tra pipeline, 7 backbone (B01–B07), pilot ResNet-50 (T00–T12) | https://www.kaggle.com/code/ashuraotsuki/deepweeds-a |
 | C | ablation chính ConvNeXt-T (C00–C12) + T09 chạy lại | https://www.kaggle.com/code/ashuraotsuki/deepweeds-c |
+| Lat | độ trễ batch 1 của 7 backbone, các phương pháp suy luận, độ phân giải 288 | https://www.kaggle.com/code/ashuraotsuki/deepweeds-lat |
 | B | tổ hợp C13, suy luận, độ trễ, chung kết F01 + mốc C00 (3 seed), `results.xlsx` | https://www.kaggle.com/code/ashuraotsuki/deepweeds-b |
 
-Notebook được sinh bởi [code/make_notebooks.py](code/make_notebooks.py) (thư mục [kaggle/](kaggle/)); code lấy từ GitHub `hdphuc127/K4-Track4-Day2-Deeplearning-Advance`. Ảnh đọc từ Kaggle Dataset `ashuraotsuki/deepweeds-fold0` (`images.zip` nguyên bản Zenodo, MD5 `b7b30f96d466fba86016aa5a26606e0f`); nhãn và fold 0 tải từ GitHub của tác giả DeepWeeds.
+Bảng bổ sung và biểu đồ đánh đổi sinh bởi `code/postprocess.py` từ `logs/latency_*.csv`. Notebook được sinh bởi [code/make_notebooks.py](code/make_notebooks.py) (thư mục [kaggle/](kaggle/)); code lấy từ GitHub `hdphuc127/K4-Track4-Day2-Deeplearning-Advance`. Ảnh đọc từ Kaggle Dataset `ashuraotsuki/deepweeds-fold0` (`images.zip` nguyên bản Zenodo, MD5 `b7b30f96d466fba86016aa5a26606e0f`); nhãn và fold 0 tải từ GitHub của tác giả DeepWeeds.
 
 **Thứ tự chạy:** A và C độc lập (chạy trước), B đọc output của A và C qua `kernel_sources`. Mỗi lần chạy có resume (`experiments.run_resume`).
 

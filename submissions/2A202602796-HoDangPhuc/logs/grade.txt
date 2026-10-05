@@ -7,7 +7,7 @@
 | I3 | Recall hai lớp khó | 4 | 4 | Chinee Apple 96.2% (mốc 88.5%), Snake Weed 97.1% (mốc 88.8%) |
 | I4a | ECE sau TS < ECE trước | 1 | 1 | trước 0.0345, sau 0.0041 |
 | I4b | Chênh macro-F1 val/test <= 0.02 | 1 | 1 | val 0.9776, test 0.9774, chênh 0.0002 |
-| I5 | Cấu hình thời gian thực | 2 | 2 | p95 = 6.0 ms (ngân sách 100 ms), đo đúng cách |
+| I5 | Cấu hình thời gian thực | 2 | 2 | p95 = 9.4 ms (ngân sách 100 ms), đo đúng cách |
 
 **Tổng các ý đã chấm: 19 / 20** (phần I tối đa 20).
 
